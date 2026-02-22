@@ -1,0 +1,67 @@
+/* SAN Zone Designer — minimal custom styles */
+
+/* Syntax highlighting for generated config */
+.config-output {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    tab-size: 2;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.config-output .comment-sep { color: #06b6d4; font-weight: bold; }
+.config-output .comment { color: #9ca3af; }
+.config-output .keyword { color: #22c55e; font-weight: bold; }
+.config-output .wwpn { color: #eab308; }
+
+/* Drag & drop zone */
+.drop-zone {
+    border: 2px dashed #4b5563;
+    transition: all 0.2s;
+}
+.drop-zone.drag-over {
+    border-color: #3b82f6;
+    background-color: rgba(59, 130, 246, 0.1);
+}
+
+/* Diff table colors */
+.diff-added { background-color: rgba(34, 197, 94, 0.15); }
+.diff-removed { background-color: rgba(239, 68, 68, 0.15); }
+.diff-modified { background-color: rgba(234, 179, 8, 0.15); }
+.diff-unchanged { background-color: rgba(156, 163, 175, 0.08); }
+
+/* Checkbox grid for expand mode */
+.expand-grid input[type="checkbox"] {
+    width: 1.1rem;
+    height: 1.1rem;
+    cursor: pointer;
+}
+
+/* Sidebar file tree */
+.file-tree-item:hover {
+    background-color: rgba(59, 130, 246, 0.1);
+}
+.file-tree-item.active {
+    background-color: rgba(59, 130, 246, 0.2);
+    border-left: 3px solid #3b82f6;
+}
+
+/* Scrollbar styling */
+.custom-scroll::-webkit-scrollbar { width: 6px; }
+.custom-scroll::-webkit-scrollbar-track { background: #1f2937; }
+.custom-scroll::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+.custom-scroll::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+/* Toast notifications */
+.toast {
+    animation: slide-in 0.3s ease-out, fade-out 0.3s ease-in 2.7s;
+}
+@keyframes slide-in {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+@keyframes fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}

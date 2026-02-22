@@ -1,0 +1,17 @@
+initiators:
+- alias: Serwer_1_HBA0
+  wwpn: '21:00:00:00:00:00:00:10'
+  host: Serwer_1
+  fabric: Fabric_A
+- alias: Serwer_1_HBA1
+  wwpn: '21:00:00:00:00:00:00:11'
+  host: Serwer_1
+  fabric: Fabric_B
+- alias: Serwer_2_HBA0
+  wwpn: '21:00:00:00:00:00:00:20'
+  host: Serwer_2
+  fabric: Fabric_A
+- alias: Serwer_2_HBA1
+  wwpn: '21:00:00:00:00:00:00:21'
+  host: Serwer_2
+  fabric: Fabric_B

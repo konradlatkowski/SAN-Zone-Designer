@@ -1,0 +1,21 @@
+targets:
+- alias: ARRAY_CT0_FC0
+  wwpn: '52:00:00:00:00:00:00:00'
+  group: Storage_A
+  storage_array: ARRAY
+  fabric: Fabric_A
+- alias: ARRAY_CT0_FC1
+  wwpn: '52:00:00:00:00:00:00:01'
+  group: Storage_A
+  storage_array: ARRAY
+  fabric: Fabric_B
+- alias: ARRAY_CT1_FC0
+  wwpn: '52:00:00:00:00:00:00:10'
+  group: Storage_A
+  storage_array: ARRAY
+  fabric: Fabric_A
+- alias: ARRAY_CT1_FC1
+  wwpn: '52:00:00:00:00:00:00:11'
+  group: Storage_A
+  storage_array: ARRAY
+  fabric: Fabric_B

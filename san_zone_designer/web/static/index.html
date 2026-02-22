@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="pl" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAN Zone Designer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="stylesheet" href="/style.css">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { colors: { dark: { 800: '#1e293b', 900: '#0f172a', 700: '#334155' } } } }
+        }
+    </script>
+</head>
+
+<body class="bg-gray-900 text-gray-100 min-h-screen" x-data x-init="$store.app.init()">
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="fixed top-4 right-4 z-[60] flex flex-col items-end"></div>
+
+    <!-- ═══ LOGIN OVERLAY ═══ -->
+    <div x-show="!$store.app.loggedIn" x-transition
+        class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900">
+        <div class="bg-gray-800 rounded-xl shadow-2xl p-8 w-[380px]">
+            <h1 class="text-2xl font-bold text-blue-400 text-center mb-2">SAN Zone Designer</h1>
+            <p class="text-gray-500 text-sm text-center mb-6">Sign in to continue</p>
+            <form @submit.prevent="$store.app.login()">
+                <div class="mb-4">
+                    <label class="block text-xs text-gray-400 mb-1">Username</label>
+                    <input type="text" x-model="$store.app.loginUsername" required autofocus
+                        class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-xs text-gray-400 mb-1">Password</label>
+                    <input type="password" x-model="$store.app.loginPassword" required
+                        class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <template x-if="$store.app.loginError">
+                    <p class="text-red-400 text-sm mb-3" x-text="$store.app.loginError"></p>
+                </template>
+                <button type="submit"
+                    class="w-full py-2 bg-blue-600 hover:bg-blue-500 rounded font-medium text-sm transition">
+                    Sign In
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ═══ MAIN APP (only when logged in) ═══ -->
+    <template x-if="$store.app.loggedIn">
+        <div>
+
+            <!-- Header -->
+            <header class="bg-gray-800 border-b border-gray-700 px-6 py-3 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <h1 class="text-xl font-bold text-blue-400">SAN Zone Designer</h1>
+                    <span class="text-xs text-gray-500">v1.1 Web</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <!-- User info -->
+                    <span class="text-sm text-gray-300" x-text="$store.app.currentUser?.username"></span>
+                    <span class="text-xs px-2 py-0.5 rounded font-medium"
+                        :class="$store.app.currentUser?.role === 'admin' ? 'bg-red-600/30 text-red-400 ring-1 ring-red-500/50' : 'bg-blue-600/30 text-blue-400 ring-1 ring-blue-500/50'"
+                        x-text="$store.app.currentUser?.role"></span>
+                    <!-- Manage Users (admin only) -->
+                    <button x-show="$store.app.currentUser?.role === 'admin'"
+                        @click="$store.app.loadUsers(); $store.app.showUserModal = true"
+                        class="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 rounded text-sm transition">
+                        Manage Users
+                    </button>
+                    <button @click="$store.app.loadModalFiles(); $store.app.showFileModal = true"
+                        class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium transition">
+                        Manage Files
+                    </button>
+                    <button @click="$store.app.logout()"
+                        class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm text-gray-300 transition">
+                        Logout
+                    </button>
+                </div>
+            </header>
+
+            <!-- Tabs -->
+            <nav class="bg-gray-800 border-b border-gray-700 px-6">
+                <div class="flex gap-1">
+                    <template
+                        x-for="t in [{id:'generate',label:'Generate'},{id:'expand',label:'Expand'},{id:'migrate',label:'Migrate'},{id:'diff',label:'Diff'}]">
+                        <button @click="$store.app.tab = t.id"
+                            :class="$store.app.tab === t.id ? 'bg-gray-700 text-blue-400 border-b-2 border-blue-400' : 'text-gray-400 hover:text-gray-200'"
+                            class="px-5 py-2.5 text-sm font-medium transition" x-text="t.label"></button>
+                    </template>
+                    <!-- Admin only tabs -->
+                    <template x-if="$store.app.currentUser?.role === 'admin'">
+                        <button @click="$store.app.tab = 'config'"
+                            :class="$store.app.tab === 'config' ? 'bg-gray-700 text-blue-400 border-b-2 border-blue-400' : 'text-gray-400 hover:text-gray-200'"
+                            class="px-5 py-2.5 text-sm font-medium transition">Configuration</button>
+                    </template>
+                    <template x-if="$store.app.currentUser?.role === 'admin'">
+                        <button @click="$store.app.openLogsTab()"
+                            :class="$store.app.tab === 'logs' ? 'bg-gray-700 text-blue-400 border-b-2 border-blue-400' : 'text-gray-400 hover:text-gray-200'"
+                            class="px-5 py-2.5 text-sm font-medium transition">Logs</button>
+                    </template>
+                </div>
+            </nav>
+
+            <!-- Main Layout -->
+            <div class="flex h-[calc(100vh-105px)]">
+
+                <!-- Sidebar -->
+                <aside class="w-[30%] min-w-[280px] max-w-[400px] bg-gray-800 border-r border-gray-700 flex flex-col">
+                    <div class="p-3 border-b border-gray-700">
+                        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">File Browser</h2>
+                    </div>
+                    <!-- Active project indicator -->
+                    <template x-if="$store.app.activeProject">
+                        <div class="px-3 py-2 bg-blue-900/30 border-b border-blue-700/50 text-xs">
+                            <span class="text-gray-400">Project:</span>
+                            <span class="text-blue-400 font-semibold ml-1" x-text="$store.app.activeProject"></span>
+                        </div>
+                    </template>
+                    <div class="flex-1 overflow-y-auto custom-scroll p-2">
+                        <template x-if="$store.app.projects.length === 0">
+                            <p class="text-gray-500 text-sm p-3">No projects yet. Use "Manage Files" to upload.</p>
+                        </template>
+                        <template x-for="proj in $store.app.projects" :key="proj.name">
+                            <div class="mb-2" x-data="{open: false}">
+                                <div class="flex items-center gap-1 px-2 py-1.5 text-sm font-semibold cursor-pointer rounded transition"
+                                    :class="$store.app.activeProject === proj.name ? 'bg-blue-900/40 text-blue-300 ring-1 ring-blue-500/50' : 'text-gray-300 hover:bg-gray-700'"
+                                    @click="open = !open; $store.app.setActiveProject(proj.name)">
+                                    <svg class="w-4 h-4 transition-transform flex-shrink-0" :class="open && 'rotate-90'"
+                                        fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M6 6l4 4-4 4V6z" />
+                                    </svg>
+                                    <span x-text="proj.name" class="text-yellow-400"></span>
+                                    <span class="text-gray-500 text-xs ml-auto"
+                                        x-text="proj.files.length + ' files'"></span>
+                                </div>
+                                <div x-show="open" x-transition.duration.150ms class="ml-5">
+                                    <template x-for="file in proj.files" :key="file.name">
+                                        <div class="file-tree-item flex items-center gap-2 px-2 py-1 text-sm rounded cursor-pointer group"
+                                            :class="{
+                                     'text-green-400': file.type === 'initiators',
+                                     'text-blue-400': file.type === 'targets',
+                                     'text-gray-400': file.type === 'unknown'
+                                 }" @click="$store.app.previewFile(proj.name, file.name)">
+                                            <span class="flex-1 truncate" x-text="file.name"></span>
+                                            <div class="hidden group-hover:flex gap-1">
+                                                <button
+                                                    @click.stop="$store.app.selectFile(proj.name, file.name, file.type)"
+                                                    class="text-xs px-1.5 py-0.5 bg-gray-600 hover:bg-gray-500 rounded"
+                                                    title="Select">
+                                                    Use
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                    <!-- Selected files display -->
+                    <div class="p-3 pb-8 border-t border-gray-700 text-xs space-y-1">
+                        <div class="flex gap-1"><span class="text-gray-500 w-14">Init:</span>
+                            <span class="text-green-400 truncate" x-text="$store.app.selectedInit || '—'"></span>
+                        </div>
+                        <div class="flex gap-1"><span class="text-gray-500 w-14">Target:</span>
+                            <span class="text-blue-400 truncate" x-text="$store.app.selectedTarget || '—'"></span>
+                        </div>
+                        <div class="flex gap-1" x-show="$store.app.tab === 'diff'"><span
+                                class="text-gray-500 w-14">Existing:</span>
+                            <span class="text-yellow-400 truncate" x-text="$store.app.selectedExisting || '—'"></span>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Main Content -->
+                <main class="flex-1 overflow-y-auto custom-scroll p-6">
+
+                    <!-- Loading overlay -->
+                    <div x-show="$store.app.loading"
+                        class="fixed inset-0 bg-black/30 z-40 flex items-center justify-center">
+                        <div class="bg-gray-800 rounded-lg px-6 py-4 flex items-center gap-3">
+                            <svg class="animate-spin h-5 w-5 text-blue-400" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+                                    fill="none"></circle>
+                                <path class="opacity-75" fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                            <span class="text-sm">Processing...</span>
+                        </div>
+                    </div>
+
+                    <!-- ═══ GENERATE TAB ═══ -->
+                    <div x-show="$store.app.tab === 'generate'">
+                        <h2 class="text-lg font-semibold mb-4">Generate Configuration (all x all)</h2>
+
+                        <!-- Config Form -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 bg-gray-800 p-4 rounded-lg">
+                            <!-- Initiators -->
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Initiators File</label>
+                                <select x-model="$store.app.selectedInit"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="">-- select --</option>
+                                    <template x-for="f in $store.app.getInitiatorFiles()">
+                                        <option :value="f.path" x-text="f.path"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <!-- Targets -->
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Targets File</label>
+                                <select x-model="$store.app.selectedTarget"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="">-- select --</option>
+                                    <template x-for="f in $store.app.getTargetFiles()">
+                                        <option :value="f.path" x-text="f.path"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <!-- Vendor -->
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Vendor</label>
+                                <div class="flex gap-3 mt-1">
+                                    <label class="flex items-center gap-1 text-sm"><input type="radio"
+                                            x-model="$store.app.vendor" value="cisco"> Cisco</label>
+                                    <label class="flex items-center gap-1 text-sm"><input type="radio"
+                                            x-model="$store.app.vendor" value="brocade"> Brocade</label>
+                                </div>
+                            </div>
+                            <!-- VSAN -->
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">VSAN</label>
+                                <input type="number" x-model="$store.app.vsan"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                            </div>
+                            <!-- Mode -->
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Mode</label>
+                                <select x-model="$store.app.mode"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="single">Single (1:1)</option>
+                                    <option value="many">Many (1:N groups)</option>
+                                </select>
+                            </div>
+                            <!-- Order -->
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Name Order</label>
+                                <select x-model="$store.app.order"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="ti">Target_Initiator</option>
+                                    <option value="it">Initiator_Target</option>
+                                </select>
+                            </div>
+                            <!-- Separator -->
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Separator</label>
+                                <select x-model="$store.app.separator"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="two">__ (double)</option>
+                                    <option value="one">_ (single)</option>
+                                </select>
+                            </div>
+                            <!-- Rollback -->
+                            <div class="flex items-end">
+                                <label class="flex items-center gap-2 text-sm">
+                                    <input type="checkbox" x-model="$store.app.rollback" class="rounded">
+                                    Generate rollback
+                                </label>
+                            </div>
+                            <!-- VSAN Name -->
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">VSAN Name</label>
+                                <input type="text" x-model="$store.app.vsanName" placeholder="auto"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                            </div>
+                            <!-- Interface Range -->
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Interface Range</label>
+                                <input type="text" x-model="$store.app.ifaceRange"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                            </div>
+                            <!-- Zoneset Name -->
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Zoneset Name</label>
+                                <input type="text" x-model="$store.app.zonesetName" placeholder="auto"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                            </div>
+                            <!-- Fabric Filter -->
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Fabric Filter</label>
+                                <input type="text" x-model="$store.app.fabricFilter" placeholder="optional"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="flex gap-3 mb-4">
+                            <button @click="$store.app.doPreview()"
+                                class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded text-sm font-medium transition">
+                                Preview (dry-run)
+                            </button>
+                            <button @click="$store.app.doGenerate()"
+                                class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium transition">
+                                Generate
+                            </button>
+                        </div>
+
+                        <!-- Validation Warnings -->
+                        <template x-if="$store.app.lastWarnings.length > 0">
+                            <div
+                                class="mb-4 px-4 py-3 bg-red-900/30 border border-red-600/50 rounded text-sm text-red-400">
+                                <div class="font-semibold mb-1">&#9888; Validation warnings:</div>
+                                <ul class="list-disc list-inside space-y-0.5">
+                                    <template x-for="w in $store.app.lastWarnings" :key="w">
+                                        <li x-text="w"></li>
+                                    </template>
+                                </ul>
+                            </div>
+                        </template>
+
+                        <!-- Preview Table -->
+                        <template x-if="$store.app.previewData && $store.app.tab === 'generate'">
+                            <div class="mb-4 bg-gray-800 rounded-lg p-4">
+                                <h3 class="text-sm font-semibold text-gray-400 mb-2">Preview — <span
+                                        x-text="$store.app.previewData.summary.zones"></span> zones</h3>
+                                <div class="overflow-x-auto max-h-64 overflow-y-auto custom-scroll">
+                                    <table class="w-full text-sm">
+                                        <thead class="text-gray-400 border-b border-gray-600">
+                                            <tr>
+                                                <th class="text-left py-1 px-2">Zone Name</th>
+                                                <th class="text-left py-1 px-2">Initiator</th>
+                                                <th class="text-left py-1 px-2">Target(s)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <template x-for="z in $store.app.previewData.zones" :key="z.name">
+                                                <tr class="border-b border-gray-700/50">
+                                                    <td class="py-1 px-2 text-cyan-400" x-text="z.name"></td>
+                                                    <td class="py-1 px-2 text-green-400" x-text="z.initiator_alias">
+                                                    </td>
+                                                    <td class="py-1 px-2 text-yellow-400"
+                                                        x-text="z.target_aliases.join(', ')"></td>
+                                                </tr>
+                                            </template>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Generated Config Output -->
+                        <template x-if="$store.app.configOutput && ($store.app.tab === 'generate')">
+                            <div class="bg-gray-800 rounded-lg p-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <h3 class="text-sm font-semibold text-gray-400">Generated Configuration</h3>
+                                    <div class="flex gap-2">
+                                        <button @click="$store.app.copyConfig()"
+                                            class="px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs transition">Copy</button>
+                                        <button @click="$store.app.downloadCfg()"
+                                            class="px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs transition">Download
+                                            .cfg</button>
+                                        <button @click="$store.app.downloadCsv()"
+                                            class="px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs transition">CSV</button>
+                                        <template x-if="$store.app.rollbackCfg">
+                                            <button @click="$store.app.downloadRollback()"
+                                                class="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-xs transition">Rollback</button>
+                                        </template>
+                                    </div>
+                                </div>
+                                <pre class="config-output bg-gray-900 rounded p-3 max-h-[500px] overflow-auto custom-scroll"
+                                    x-html="$store.app.configHtml"></pre>
+                                <!-- Saved files info -->
+                                <template x-if="$store.app.lastSavedFiles.length > 0">
+                                    <div
+                                        class="mt-2 px-3 py-2 bg-green-900/30 border border-green-700/50 rounded text-xs text-green-400">
+                                        <span class="font-semibold">Auto-saved:</span>
+                                        <template x-for="f in $store.app.lastSavedFiles" :key="f">
+                                            <span class="ml-2 bg-green-900/50 px-1.5 py-0.5 rounded" x-text="f"></span>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- ═══ EXPAND TAB ═══ -->
+                    <div x-show="$store.app.tab === 'expand'">
+                        <h2 class="text-lg font-semibold mb-4">Expand — Select Pairs</h2>
+
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 bg-gray-800 p-4 rounded-lg">
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Initiators File</label>
+                                <select x-model="$store.app.selectedInit"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="">-- select --</option>
+                                    <template x-for="f in $store.app.getInitiatorFiles()">
+                                        <option :value="f.path" x-text="f.path"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Targets File</label>
+                                <select x-model="$store.app.selectedTarget"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="">-- select --</option>
+                                    <template x-for="f in $store.app.getTargetFiles()">
+                                        <option :value="f.path" x-text="f.path"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Vendor</label>
+                                <div class="flex gap-3 mt-1">
+                                    <label class="flex items-center gap-1 text-sm"><input type="radio"
+                                            x-model="$store.app.vendor" value="cisco"> Cisco</label>
+                                    <label class="flex items-center gap-1 text-sm"><input type="radio"
+                                            x-model="$store.app.vendor" value="brocade"> Brocade</label>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">VSAN</label>
+                                <input type="number" x-model="$store.app.vsan"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Mode</label>
+                                <select x-model="$store.app.mode"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="single">Single (1:1)</option>
+                                    <option value="many">Many (1:N groups)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Name Order</label>
+                                <select x-model="$store.app.order"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="ti">Target_Initiator</option>
+                                    <option value="it">Initiator_Target</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Separator</label>
+                                <select x-model="$store.app.separator"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="two">__ (double)</option>
+                                    <option value="one">_ (single)</option>
+                                </select>
+                            </div>
+                            <div class="flex items-end">
+                                <label class="flex items-center gap-2 text-sm">
+                                    <input type="checkbox" x-model="$store.app.rollback" class="rounded">
+                                    Generate rollback
+                                </label>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">VSAN Name</label>
+                                <input type="text" x-model="$store.app.vsanName" placeholder="auto"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Interface Range</label>
+                                <input type="text" x-model="$store.app.ifaceRange"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Zoneset Name</label>
+                                <input type="text" x-model="$store.app.zonesetName" placeholder="auto"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Fabric Filter</label>
+                                <input type="text" x-model="$store.app.fabricFilter" placeholder="optional"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                            </div>
+                        </div>
+
+                        <div class="flex gap-3 mb-4">
+                            <button @click="$store.app.doExpandPreview()"
+                                class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded text-sm font-medium transition">
+                                Load & Preview
+                            </button>
+                            <button x-show="$store.app.expandPreviewDone" @click="$store.app.doExpandGenerate()"
+                                class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium transition">
+                                Generate Selected
+                            </button>
+                        </div>
+
+                        <!-- Validation Warnings -->
+                        <template x-if="$store.app.lastWarnings.length > 0">
+                            <div
+                                class="mb-4 px-4 py-3 bg-red-900/30 border border-red-600/50 rounded text-sm text-red-400">
+                                <div class="font-semibold mb-1">&#9888; Validation warnings:</div>
+                                <ul class="list-disc list-inside space-y-0.5">
+                                    <template x-for="w in $store.app.lastWarnings" :key="w">
+                                        <li x-text="w"></li>
+                                    </template>
+                                </ul>
+                            </div>
+                        </template>
+
+                        <!-- Checkbox Grid -->
+                        <template x-if="$store.app.expandPreviewDone">
+                            <div class="bg-gray-800 rounded-lg p-4 mb-4 overflow-x-auto expand-grid">
+                                <h3 class="text-sm font-semibold text-gray-400 mb-3">Select initiator-target pairs</h3>
+                                <template x-for="(row, ri) in $store.app.expandGrid" :key="row.initiator">
+                                    <div class="mb-3 border-b border-gray-700 pb-3">
+                                        <div class="flex items-center gap-3 mb-2">
+                                            <span class="text-green-400 font-medium text-sm"
+                                                x-text="row.initiator"></span>
+                                            <button @click="$store.app.toggleAllExpand(ri, true)"
+                                                class="text-xs text-blue-400 hover:underline">All</button>
+                                            <button @click="$store.app.toggleAllExpand(ri, false)"
+                                                class="text-xs text-red-400 hover:underline">None</button>
+                                        </div>
+                                        <div class="flex flex-wrap gap-2 ml-4">
+                                            <template x-for="(tgt, ti) in row.targets" :key="tgt.alias">
+                                                <label
+                                                    class="flex items-center gap-1.5 text-sm bg-gray-700 rounded px-2 py-1 cursor-pointer hover:bg-gray-600"
+                                                    :class="tgt.selected && 'ring-1 ring-blue-400'">
+                                                    <input type="checkbox" x-model="tgt.selected" class="rounded">
+                                                    <span class="text-yellow-400" x-text="tgt.alias"></span>
+                                                </label>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+
+                        <!-- Config output (shared) -->
+                        <template x-if="$store.app.configOutput && $store.app.tab === 'expand'">
+                            <div class="bg-gray-800 rounded-lg p-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <h3 class="text-sm font-semibold text-gray-400">Generated Configuration</h3>
+                                    <div class="flex gap-2">
+                                        <button @click="$store.app.copyConfig()"
+                                            class="px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs">Copy</button>
+                                        <button @click="$store.app.downloadCfg()"
+                                            class="px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs">Download
+                                            .cfg</button>
+                                        <button @click="$store.app.downloadCsv()"
+                                            class="px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs">CSV</button>
+                                    </div>
+                                </div>
+                                <pre class="config-output bg-gray-900 rounded p-3 max-h-[500px] overflow-auto custom-scroll"
+                                    x-html="$store.app.configHtml"></pre>
+                                <template x-if="$store.app.lastSavedFiles.length > 0">
+                                    <div
+                                        class="mt-2 px-3 py-2 bg-green-900/30 border border-green-700/50 rounded text-xs text-green-400">
+                                        <span class="font-semibold">Auto-saved:</span>
+                                        <template x-for="f in $store.app.lastSavedFiles" :key="f">
+                                            <span class="ml-2 bg-green-900/50 px-1.5 py-0.5 rounded" x-text="f"></span>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- ═══ MIGRATE TAB ═══ -->
+                    <div x-show="$store.app.tab === 'migrate'">
+                        <h2 class="text-lg font-semibold mb-4">Migrate txt to YAML</h2>
+                        <div class="grid grid-cols-2 gap-4 mb-4 bg-gray-800 p-4 rounded-lg">
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Input File (.txt)</label>
+                                <select x-model="$store.app.migrateInput"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="">-- select --</option>
+                                    <template x-for="f in $store.app.getTxtFiles()">
+                                        <option :value="f.path" x-text="f.path"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">File Type</label>
+                                <select x-model="$store.app.migrateType"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="auto">Auto-detect</option>
+                                    <option value="initiators">Initiators</option>
+                                    <option value="targets">Targets</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Output Project</label>
+                                <select x-model="$store.app.migrateProject"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="">-- select --</option>
+                                    <template x-for="p in $store.app.projects">
+                                        <option :value="p.name" x-text="p.name"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Output Filename</label>
+                                <input type="text" x-model="$store.app.migrateFilename"
+                                    placeholder="e.g. initiators.yaml"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                            </div>
+                        </div>
+
+                        <div class="flex gap-3 mb-4">
+                            <button @click="$store.app.doMigratePreview()"
+                                class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded text-sm font-medium transition">Preview</button>
+                            <button @click="$store.app.doMigrate()"
+                                class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium transition">Migrate
+                                & Save</button>
+                        </div>
+
+                        <template x-if="$store.app.migratePreview">
+                            <div class="bg-gray-800 rounded-lg p-4">
+                                <h3 class="text-sm font-semibold text-gray-400 mb-2">
+                                    YAML Preview — <span x-text="$store.app.migratePreview.entry_count"></span> entries
+                                    (<span x-text="$store.app.migratePreview.file_type"></span>)
+                                </h3>
+                                <pre class="bg-gray-900 rounded p-3 text-sm text-green-300 max-h-[400px] overflow-auto custom-scroll"
+                                    x-text="$store.app.migratePreview.yaml_content"></pre>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- ═══ DIFF TAB ═══ -->
+                    <div x-show="$store.app.tab === 'diff'">
+                        <h2 class="text-lg font-semibold mb-4">Zone Diff</h2>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 bg-gray-800 p-4 rounded-lg">
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Initiators File</label>
+                                <select x-model="$store.app.selectedInit"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="">-- select --</option>
+                                    <template x-for="f in $store.app.getInitiatorFiles()">
+                                        <option :value="f.path" x-text="f.path"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Targets File</label>
+                                <select x-model="$store.app.selectedTarget"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="">-- select --</option>
+                                    <template x-for="f in $store.app.getTargetFiles()">
+                                        <option :value="f.path" x-text="f.path"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Existing Zone Config</label>
+                                <select x-model="$store.app.selectedExisting"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="">-- select --</option>
+                                    <template x-for="f in $store.app.getAllFiles()">
+                                        <option :value="f.path" x-text="f.path"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Vendor</label>
+                                <div class="flex gap-3 mt-1">
+                                    <label class="flex items-center gap-1 text-sm"><input type="radio"
+                                            x-model="$store.app.vendor" value="cisco"> Cisco</label>
+                                    <label class="flex items-center gap-1 text-sm"><input type="radio"
+                                            x-model="$store.app.vendor" value="brocade"> Brocade</label>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">VSAN</label>
+                                <input type="number" x-model="$store.app.vsan"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Mode</label>
+                                <select x-model="$store.app.mode"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="single">Single</option>
+                                    <option value="many">Many</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Order</label>
+                                <select x-model="$store.app.order"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="ti">Target_Initiator</option>
+                                    <option value="it">Initiator_Target</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Separator</label>
+                                <select x-model="$store.app.separator"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                    <option value="two">__</option>
+                                    <option value="one">_</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <button @click="$store.app.doDiff()"
+                            class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium transition mb-4">Compare</button>
+
+                        <template x-if="$store.app.diffResult">
+                            <div class="bg-gray-800 rounded-lg p-4">
+                                <!-- Saved files info -->
+                                <template x-if="$store.app.diffResult.saved_files?.length > 0">
+                                    <div
+                                        class="mb-3 px-3 py-2 bg-green-900/30 border border-green-700/50 rounded text-xs text-green-400">
+                                        <span class="font-semibold">Auto-saved:</span>
+                                        <template x-for="f in $store.app.diffResult.saved_files" :key="f">
+                                            <span class="ml-2 bg-green-900/50 px-1.5 py-0.5 rounded" x-text="f"></span>
+                                        </template>
+                                    </div>
+                                </template>
+                                <!-- Summary -->
+                                <div class="flex gap-4 mb-4 text-sm">
+                                    <span class="text-green-400">+ Added: <span
+                                            x-text="$store.app.diffResult.summary.added"></span></span>
+                                    <span class="text-red-400">- Removed: <span
+                                            x-text="$store.app.diffResult.summary.removed"></span></span>
+                                    <span class="text-gray-400">= Unchanged: <span
+                                            x-text="$store.app.diffResult.summary.unchanged"></span></span>
+                                    <span class="text-yellow-400">~ Modified: <span
+                                            x-text="$store.app.diffResult.summary.modified"></span></span>
+                                </div>
+                                <!-- Diff Table -->
+                                <div class="overflow-x-auto max-h-[500px] overflow-y-auto custom-scroll">
+                                    <table class="w-full text-sm">
+                                        <thead class="text-gray-400 border-b border-gray-600 sticky top-0 bg-gray-800">
+                                            <tr>
+                                                <th class="text-left py-1 px-2 w-24">Status</th>
+                                                <th class="text-left py-1 px-2">Zone Name</th>
+                                                <th class="text-left py-1 px-2">Members</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <template x-for="z in $store.app.diffResult.added" :key="'a-'+z.name">
+                                                <tr class="diff-added border-b border-gray-700/30">
+                                                    <td class="py-1 px-2 text-green-400 font-bold">+ ADD</td>
+                                                    <td class="py-1 px-2" x-text="z.name"></td>
+                                                    <td class="py-1 px-2 text-xs"
+                                                        x-text="z.initiator + ' → ' + z.targets.map(t=>t.alias).join(', ')">
+                                                    </td>
+                                                </tr>
+                                            </template>
+                                            <template x-for="z in $store.app.diffResult.removed" :key="'r-'+z.name">
+                                                <tr class="diff-removed border-b border-gray-700/30">
+                                                    <td class="py-1 px-2 text-red-400 font-bold">- REMOVE</td>
+                                                    <td class="py-1 px-2" x-text="z.name"></td>
+                                                    <td class="py-1 px-2 text-xs"
+                                                        x-text="z.initiator + ' → ' + z.targets.map(t=>t.alias).join(', ')">
+                                                    </td>
+                                                </tr>
+                                            </template>
+                                            <template x-for="m in $store.app.diffResult.modified"
+                                                :key="'m-'+m.new.name">
+                                                <tr class="diff-modified border-b border-gray-700/30">
+                                                    <td class="py-1 px-2 text-yellow-400 font-bold">~ MOD</td>
+                                                    <td class="py-1 px-2" x-text="m.new.name"></td>
+                                                    <td class="py-1 px-2 text-xs">
+                                                        <div class="text-red-300"
+                                                            x-text="'OLD: ' + m.old.initiator + ' → ' + m.old.targets.map(t=>t.alias).join(', ')">
+                                                        </div>
+                                                        <div class="text-green-300"
+                                                            x-text="'NEW: ' + m.new.initiator + ' → ' + m.new.targets.map(t=>t.alias).join(', ')">
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            </template>
+                                            <template x-for="z in $store.app.diffResult.unchanged" :key="'u-'+z.name">
+                                                <tr class="diff-unchanged border-b border-gray-700/30">
+                                                    <td class="py-1 px-2 text-gray-500">=</td>
+                                                    <td class="py-1 px-2 text-gray-500" x-text="z.name"></td>
+                                                    <td class="py-1 px-2 text-xs text-gray-500"
+                                                        x-text="z.initiator + ' → ' + z.targets.map(t=>t.alias).join(', ')">
+                                                    </td>
+                                                </tr>
+                                            </template>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- ═══ CONFIGURATION TAB (Admin only) ═══ -->
+                    <div x-show="$store.app.tab === 'config' && $store.app.currentUser?.role === 'admin'">
+                        <h2 class="text-lg font-semibold mb-4 text-blue-400">System Configuration</h2>
+
+                        <!-- Current License Information -->
+                        <div class="bg-gray-800 rounded-lg p-6 mb-6 border border-gray-700 max-w-2xl">
+                            <h3 class="text-md font-semibold text-gray-300 mb-4 border-b border-gray-700 pb-2">License
+                                Information</h3>
+
+                            <template x-if="$store.app.licenseInfo">
+                                <div class="grid grid-cols-2 gap-y-4 text-sm mt-4">
+                                    <div class="text-gray-500">Issued to (Company):</div>
+                                    <div class="font-medium text-green-400" x-text="$store.app.licenseInfo.company">
+                                    </div>
+
+                                    <div class="text-gray-500">Issue Date:</div>
+                                    <div class="font-medium text-gray-300" x-text="$store.app.licenseInfo.issued"></div>
+
+                                    <div class="text-gray-500">Expiration Date:</div>
+                                    <div class="font-medium text-yellow-500" x-text="$store.app.licenseInfo.expires">
+                                    </div>
+
+                                    <div class="text-gray-500">Authorized Seats:</div>
+                                    <div class="font-medium text-blue-400" x-text="$store.app.licenseInfo.seats"></div>
+
+                                    <div class="text-gray-500">Authorized Switches:</div>
+                                    <div class="font-medium text-orange-400" x-text="$store.app.licenseInfo.switches">
+                                    </div>
+                                </div>
+                            </template>
+
+                            <template x-if="!$store.app.licenseInfo">
+                                <div class="text-yellow-500 text-sm mt-4 flex items-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+                                        </path>
+                                    </svg>
+                                    No active license found or license is invalid.
+                                </div>
+                            </template>
+                        </div>
+
+                        <!-- License Key Input -->
+                        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 max-w-2xl mt-4">
+                            <h3 class="text-md font-semibold text-gray-300 mb-4 border-b border-gray-700 pb-2">Update
+                                License Key</h3>
+                            <form @submit.prevent="$store.app.saveLicense()">
+                                <div class="mb-4">
+                                    <label class="block text-xs text-gray-400 mb-2">License Key</label>
+                                    <textarea x-model="$store.app.newLicenseKey" rows="6"
+                                        placeholder="Paste your Ed25519 signed license key here..."
+                                        class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-sm text-gray-300 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"></textarea>
+                                </div>
+                                <button type="submit"
+                                    class="px-5 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium transition flex items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4">
+                                        </path>
+                                    </svg>
+                                    Save Configuration
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- ═══ LOGS TAB (Admin only) ═══ -->
+                    <div x-show="$store.app.tab === 'logs' && $store.app.currentUser?.role === 'admin'">
+                        <h2 class="text-lg font-semibold mb-4 text-blue-400">System Logs</h2>
+
+                        <!-- Sub-tabs: Audit / Application -->
+                        <div class="flex gap-2 mb-4">
+                            <button @click="$store.app.logsTab = 'audit'; $store.app.loadAuditLogs()"
+                                :class="$store.app.logsTab === 'audit' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+                                class="px-4 py-1.5 rounded text-sm font-medium transition">Audit Log</button>
+                            <button @click="$store.app.logsTab = 'app'; $store.app.loadAppLogs()"
+                                :class="$store.app.logsTab === 'app' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+                                class="px-4 py-1.5 rounded text-sm font-medium transition">Application Log</button>
+                        </div>
+
+                        <!-- ── AUDIT LOG VIEW ── -->
+                        <div x-show="$store.app.logsTab === 'audit'">
+                            <!-- Filters -->
+                            <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 bg-gray-800 p-4 rounded-lg">
+                                <div>
+                                    <label class="block text-xs text-gray-400 mb-1">Actor</label>
+                                    <select x-model="$store.app.logsFilterActor" @change="$store.app.loadAuditLogs()"
+                                        class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                        <option value="">All</option>
+                                        <template x-for="a in $store.app.logsActors" :key="a">
+                                            <option :value="a" x-text="a"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-400 mb-1">Event Type</label>
+                                    <select x-model="$store.app.logsFilterEventType" @change="$store.app.loadAuditLogs()"
+                                        class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                        <option value="">All</option>
+                                        <template x-for="t in $store.app.logsEventTypes" :key="t">
+                                            <option :value="t" x-text="t"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-400 mb-1">Project</label>
+                                    <select x-model="$store.app.logsFilterProject" @change="$store.app.loadAuditLogs()"
+                                        class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                        <option value="">All</option>
+                                        <template x-for="p in $store.app.projects" :key="p.name">
+                                            <option :value="p.name" x-text="p.name"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-400 mb-1">Outcome</label>
+                                    <select x-model="$store.app.logsFilterOutcome" @change="$store.app.loadAuditLogs()"
+                                        class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                        <option value="">All</option>
+                                        <option value="success">Success</option>
+                                        <option value="failure">Failure</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-end">
+                                    <button @click="$store.app.logsFilterActor=''; $store.app.logsFilterEventType=''; $store.app.logsFilterProject=''; $store.app.logsFilterOutcome=''; $store.app.loadAuditLogs()"
+                                        class="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 rounded text-sm transition">Clear Filters</button>
+                                </div>
+                            </div>
+
+                            <!-- Loading -->
+                            <template x-if="$store.app.logsLoading">
+                                <div class="text-center text-gray-500 py-8">Loading logs...</div>
+                            </template>
+
+                            <!-- Audit Table -->
+                            <template x-if="!$store.app.logsLoading">
+                                <div class="bg-gray-800 rounded-lg overflow-hidden">
+                                    <div class="overflow-x-auto max-h-[60vh] overflow-y-auto custom-scroll">
+                                        <table class="w-full text-sm">
+                                            <thead class="text-gray-400 border-b border-gray-600 sticky top-0 bg-gray-800 z-10">
+                                                <tr>
+                                                    <th class="text-left py-2 px-3 w-44">Timestamp</th>
+                                                    <th class="text-left py-2 px-3 w-36">Event</th>
+                                                    <th class="text-left py-2 px-3 w-24">Actor</th>
+                                                    <th class="text-left py-2 px-3 w-24">Project</th>
+                                                    <th class="text-left py-2 px-3 w-20">Outcome</th>
+                                                    <th class="text-left py-2 px-3">Details</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <template x-for="(log, i) in $store.app.auditLogs" :key="i">
+                                                    <tr class="border-b border-gray-700/50 hover:bg-gray-700/30">
+                                                        <td class="py-1.5 px-3 text-gray-400 text-xs font-mono" x-text="log.timestamp?.replace('T', ' ').substring(0, 19)"></td>
+                                                        <td class="py-1.5 px-3">
+                                                            <span class="text-xs px-1.5 py-0.5 rounded font-medium"
+                                                                :class="{
+                                                                    'bg-blue-900/40 text-blue-400': log.event_type?.startsWith('auth'),
+                                                                    'bg-green-900/40 text-green-400': log.event_type?.startsWith('config'),
+                                                                    'bg-yellow-900/40 text-yellow-400': log.event_type?.startsWith('file'),
+                                                                    'bg-purple-900/40 text-purple-400': log.event_type?.startsWith('project'),
+                                                                    'bg-red-900/40 text-red-400': log.event_type?.startsWith('user'),
+                                                                    'bg-gray-700 text-gray-300': log.event_type?.startsWith('audit')
+                                                                }"
+                                                                x-text="log.event_type"></span>
+                                                        </td>
+                                                        <td class="py-1.5 px-3 text-cyan-400 text-xs" x-text="log.actor"></td>
+                                                        <td class="py-1.5 px-3 text-yellow-400 text-xs" x-text="log.project || '—'"></td>
+                                                        <td class="py-1.5 px-3">
+                                                            <span class="text-xs"
+                                                                :class="log.outcome === 'success' ? 'text-green-400' : 'text-red-400'"
+                                                                x-text="log.outcome"></span>
+                                                        </td>
+                                                        <td class="py-1.5 px-3 text-gray-400 text-xs truncate max-w-xs" x-text="$store.app.formatAuditDetail(log.detail)"></td>
+                                                    </tr>
+                                                </template>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div class="px-4 py-2 border-t border-gray-700 text-xs text-gray-500">
+                                        Showing <span x-text="$store.app.auditLogs.length"></span> entries
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <!-- ── APPLICATION LOG VIEW ── -->
+                        <div x-show="$store.app.logsTab === 'app'">
+                            <!-- Filters -->
+                            <div class="flex gap-3 mb-4 bg-gray-800 p-4 rounded-lg">
+                                <div>
+                                    <label class="block text-xs text-gray-400 mb-1">Level</label>
+                                    <select x-model="$store.app.logsFilterLevel" @change="$store.app.loadAppLogs()"
+                                        class="bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                        <option value="">All</option>
+                                        <option value="INFO">INFO</option>
+                                        <option value="WARNING">WARNING</option>
+                                        <option value="ERROR">ERROR</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-end">
+                                    <button @click="$store.app.loadAppLogs()"
+                                        class="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 rounded text-sm transition">Refresh</button>
+                                </div>
+                            </div>
+
+                            <!-- Loading -->
+                            <template x-if="$store.app.logsLoading">
+                                <div class="text-center text-gray-500 py-8">Loading logs...</div>
+                            </template>
+
+                            <!-- App Log Table -->
+                            <template x-if="!$store.app.logsLoading">
+                                <div class="bg-gray-800 rounded-lg overflow-hidden">
+                                    <div class="overflow-x-auto max-h-[60vh] overflow-y-auto custom-scroll">
+                                        <table class="w-full text-sm">
+                                            <thead class="text-gray-400 border-b border-gray-600 sticky top-0 bg-gray-800 z-10">
+                                                <tr>
+                                                    <th class="text-left py-2 px-3 w-44">Timestamp</th>
+                                                    <th class="text-left py-2 px-3 w-20">Level</th>
+                                                    <th class="text-left py-2 px-3 w-56">Logger</th>
+                                                    <th class="text-left py-2 px-3">Message</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <template x-for="(log, i) in $store.app.appLogs" :key="i">
+                                                    <tr class="border-b border-gray-700/50 hover:bg-gray-700/30">
+                                                        <td class="py-1.5 px-3 text-gray-400 text-xs font-mono" x-text="log.timestamp"></td>
+                                                        <td class="py-1.5 px-3">
+                                                            <span class="text-xs font-medium"
+                                                                :class="{
+                                                                    'text-green-400': log.level === 'INFO',
+                                                                    'text-yellow-400': log.level === 'WARNING',
+                                                                    'text-red-400': log.level === 'ERROR'
+                                                                }"
+                                                                x-text="log.level"></span>
+                                                        </td>
+                                                        <td class="py-1.5 px-3 text-gray-500 text-xs" x-text="log.logger"></td>
+                                                        <td class="py-1.5 px-3 text-gray-300 text-xs" x-text="log.message"></td>
+                                                    </tr>
+                                                </template>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div class="px-4 py-2 border-t border-gray-700 text-xs text-gray-500">
+                                        Showing <span x-text="$store.app.appLogs.length"></span> entries
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                </main>
+            </div>
+
+            <!-- ═══ FILE MANAGEMENT MODAL ═══ -->
+            <div x-show="$store.app.showFileModal" x-transition
+                class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+                @keydown.escape.window="$store.app.showFileModal = false">
+                <div class="bg-gray-800 rounded-xl shadow-2xl w-[800px] max-h-[80vh] flex flex-col"
+                    @click.outside="$store.app.showFileModal = false">
+                    <!-- Modal Header -->
+                    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+                        <h2 class="text-lg font-semibold">Manage Files</h2>
+                        <button @click="$store.app.showFileModal = false"
+                            class="text-gray-400 hover:text-white text-xl">&times;</button>
+                    </div>
+
+                    <div class="flex flex-1 overflow-hidden">
+                        <!-- Left: Projects & Files -->
+                        <div class="w-1/2 border-r border-gray-700 flex flex-col">
+                            <!-- Create Project -->
+                            <div class="p-4 border-b border-gray-700">
+                                <div class="flex gap-2">
+                                    <input type="text" x-model="$store.app.newProjectName"
+                                        placeholder="New project name..."
+                                        class="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm"
+                                        @keydown.enter="$store.app.createProject()">
+                                    <button @click="$store.app.createProject()"
+                                        class="px-3 py-1.5 bg-green-600 hover:bg-green-500 rounded text-sm">Create</button>
+                                </div>
+                            </div>
+
+                            <!-- Project List -->
+                            <div class="flex-1 overflow-y-auto custom-scroll p-3">
+                                <template x-for="proj in $store.app.modalProjects" :key="proj.name">
+                                    <div class="mb-3">
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="text-yellow-400 font-medium text-sm" x-text="proj.name"></span>
+                                            <button @click="$store.app.deleteProject(proj.name)"
+                                                class="text-red-400 hover:text-red-300 text-xs">Delete</button>
+                                        </div>
+                                        <!-- Drag & Drop Upload -->
+                                        <div class="drop-zone rounded p-3 mb-2 text-center text-xs text-gray-500"
+                                            x-data="{dragging: false}" @dragover.prevent="dragging = true"
+                                            @dragleave="dragging = false"
+                                            @drop.prevent="dragging = false; $store.app.uploadFiles(proj.name, $event.dataTransfer.files)"
+                                            :class="dragging && 'drag-over'">
+                                            <span>Drop files here or </span>
+                                            <label class="text-blue-400 hover:underline cursor-pointer">
+                                                browse
+                                                <input type="file" multiple accept=".yaml,.yml,.txt,.cfg,.csv,.json"
+                                                    class="hidden"
+                                                    @change="$store.app.uploadFiles(proj.name, $event.target.files); $event.target.value=''">
+                                            </label>
+                                        </div>
+                                        <!-- Files -->
+                                        <template x-for="file in proj.files" :key="file.name">
+                                            <div
+                                                class="flex items-center justify-between px-2 py-1 text-sm hover:bg-gray-700 rounded group">
+                                                <span class="cursor-pointer" :class="{
+                                        'text-green-400': file.type==='initiators',
+                                        'text-blue-400': file.type==='targets',
+                                        'text-orange-400': file.name.startsWith('_output/'),
+                                        'text-gray-400': file.type==='unknown' && !file.name.startsWith('_output/')
+                                    }" @click="$store.app.previewFile(proj.name, file.name)" x-text="file.name"></span>
+                                                <div class="hidden group-hover:flex gap-1">
+                                                    <button x-show="!file.name.startsWith('_output/')"
+                                                        @click="$store.app.selectFile(proj.name, file.name, file.type)"
+                                                        class="text-xs px-1.5 py-0.5 bg-blue-600 rounded">Use</button>
+                                                    <button @click="$store.app.deleteFile(proj.name, file.name)"
+                                                        class="text-xs px-1.5 py-0.5 bg-red-600 rounded">Del</button>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Right: File Preview -->
+                        <div class="w-1/2 flex flex-col">
+                            <template x-if="$store.app.filePreview">
+                                <div class="flex flex-col flex-1 overflow-hidden">
+                                    <div class="px-4 py-3 border-b border-gray-700">
+                                        <h3 class="text-sm font-semibold"
+                                            x-text="$store.app.filePreview._project + '/' + $store.app.filePreview._filename">
+                                        </h3>
+                                        <span class="text-xs text-gray-500"
+                                            x-text="'Type: ' + $store.app.filePreview.file_type"></span>
+                                    </div>
+                                    <!-- Parsed entries -->
+                                    <template x-if="$store.app.filePreview.entries.length > 0">
+                                        <div class="p-3 border-b border-gray-700 max-h-48 overflow-auto custom-scroll">
+                                            <table class="w-full text-xs">
+                                                <thead class="text-gray-400">
+                                                    <tr>
+                                                        <th class="text-left py-1">Alias</th>
+                                                        <th class="text-left py-1">WWPN</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <template x-for="e in $store.app.filePreview.entries"
+                                                        :key="e.alias">
+                                                        <tr class="border-b border-gray-700/30">
+                                                            <td class="py-0.5 text-cyan-400" x-text="e.alias"></td>
+                                                            <td class="py-0.5 text-yellow-400 font-mono"
+                                                                x-text="e.wwpn"></td>
+                                                        </tr>
+                                                    </template>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </template>
+                                    <!-- File Warnings -->
+                                    <template
+                                        x-if="$store.app.filePreview.warnings && $store.app.filePreview.warnings.length > 0">
+                                        <div
+                                            class="mx-3 mb-2 px-3 py-2 bg-red-900/30 border border-red-600/50 rounded text-xs text-red-400">
+                                            <div class="font-semibold mb-1">&#9888; Warnings:</div>
+                                            <ul class="list-disc list-inside">
+                                                <template x-for="w in $store.app.filePreview.warnings" :key="w">
+                                                    <li x-text="w"></li>
+                                                </template>
+                                            </ul>
+                                        </div>
+                                    </template>
+                                    <!-- Raw content -->
+                                    <div class="flex-1 overflow-auto custom-scroll p-3">
+                                        <pre class="text-xs text-gray-300 whitespace-pre-wrap"
+                                            x-text="$store.app.filePreview.content"></pre>
+                                    </div>
+                                </div>
+                            </template>
+                            <template x-if="!$store.app.filePreview">
+                                <div class="flex items-center justify-center flex-1 text-gray-500 text-sm">Click a file
+                                    to preview</div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ USER MANAGEMENT MODAL (Admin only) ═══ -->
+            <div x-show="$store.app.showUserModal" x-transition
+                class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+                @keydown.escape.window="$store.app.showUserModal = false">
+                <div class="bg-gray-800 rounded-xl shadow-2xl w-[500px] max-h-[70vh] flex flex-col"
+                    @click.outside="$store.app.showUserModal = false">
+                    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+                        <h2 class="text-lg font-semibold">Manage Users</h2>
+                        <button @click="$store.app.showUserModal = false"
+                            class="text-gray-400 hover:text-white text-xl">&times;</button>
+                    </div>
+
+                    <!-- Create User Form -->
+                    <div class="p-4 border-b border-gray-700">
+                        <h3 class="text-sm font-semibold text-gray-400 mb-3">Create User</h3>
+                        <div class="grid grid-cols-3 gap-2 mb-2">
+                            <input type="text" x-model="$store.app.newUserName" placeholder="Username"
+                                class="bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                            <input type="password" x-model="$store.app.newUserPassword" placeholder="Password"
+                                class="bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                            <select x-model="$store.app.newUserRole"
+                                class="bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <div class="flex gap-2">
+                            <input type="text" x-model="$store.app.newUserProjects"
+                                placeholder="Projects (comma-separated, e.g. DC_Krakow, DC_Warsaw)"
+                                x-show="$store.app.newUserRole !== 'admin'"
+                                class="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                            <button @click="$store.app.createUser()"
+                                class="px-3 py-1.5 bg-green-600 hover:bg-green-500 rounded text-sm whitespace-nowrap">Add</button>
+                        </div>
+                    </div>
+
+                    <!-- User List -->
+                    <div class="flex-1 overflow-y-auto custom-scroll p-4">
+                        <template x-for="u in $store.app.userList" :key="u.username">
+                            <div class="px-3 py-2 hover:bg-gray-700 rounded mb-2"
+                                x-data="{editing: false, editProjects: ''}">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-sm font-medium" x-text="u.username"></span>
+                                        <span class="text-xs px-1.5 py-0.5 rounded"
+                                            :class="u.role === 'admin' ? 'bg-red-600/30 text-red-400' : 'bg-blue-600/30 text-blue-400'"
+                                            x-text="u.role"></span>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <button x-show="u.role !== 'admin' && !editing"
+                                            @click="editing = true; editProjects = (u.projects || []).join(', ')"
+                                            class="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded">Edit
+                                            Projects</button>
+                                        <button x-show="u.username !== $store.app.currentUser?.username"
+                                            @click="$store.app.deleteUser(u.username)"
+                                            class="text-xs px-2 py-1 bg-red-600 hover:bg-red-500 rounded">Delete</button>
+                                    </div>
+                                </div>
+                                <!-- Project badges -->
+                                <div x-show="u.role !== 'admin' && !editing" class="mt-1 flex flex-wrap gap-1">
+                                    <template x-if="!u.projects || u.projects.length === 0">
+                                        <span class="text-xs text-gray-500 italic">No projects assigned</span>
+                                    </template>
+                                    <template x-for="p in (u.projects || [])" :key="p">
+                                        <span
+                                            class="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-400 rounded ring-1 ring-green-600/30"
+                                            x-text="p"></span>
+                                    </template>
+                                </div>
+                                <!-- Inline edit -->
+                                <div x-show="editing" class="mt-2 flex gap-2">
+                                    <input type="text" x-model="editProjects" placeholder="Projects (comma-separated)"
+                                        class="flex-1 bg-gray-600 border border-gray-500 rounded px-2 py-1 text-sm"
+                                        @keydown.enter="$store.app.updateUserProjects(u.username, editProjects); editing = false"
+                                        @keydown.escape="editing = false">
+                                    <button
+                                        @click="$store.app.updateUserProjects(u.username, editProjects); editing = false"
+                                        class="px-2 py-1 bg-green-600 hover:bg-green-500 rounded text-xs">Save</button>
+                                    <button @click="editing = false"
+                                        class="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs">Cancel</button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- end x-if loggedIn -->
+    </template>
+
+    <!-- Footer -->
+    <footer
+        class="fixed bottom-0 left-0 right-0 bg-gray-900/80 border-t border-gray-800 py-1.5 px-4 text-center text-xs text-gray-600 z-40 backdrop-blur-sm">
+        SAN Zone Designer &copy; 2026 &mdash; <a href="https://sanzonedesigner.com" target="_blank" rel="noopener"
+            class="text-gray-500 hover:text-blue-400 transition">sanzonedesigner.com</a>
+    </footer>
+
+    <script src="/app.js"></script>
+</body>
+
+</html>
