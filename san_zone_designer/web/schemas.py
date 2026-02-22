@@ -124,3 +124,19 @@ class UserCreateRequest(BaseModel):
 
 class UserUpdateRequest(BaseModel):
     projects: list[str] = Field(default_factory=list)
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class FileSaveRequest(BaseModel):
+    entries: list[dict]
+    file_type: str  # "initiators" or "targets"
+
+
+class FileSaveResponse(BaseModel):
+    saved: bool
+    warnings: list[str] = Field(default_factory=list)
+    entry_count: int

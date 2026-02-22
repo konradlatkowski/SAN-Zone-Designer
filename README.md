@@ -1,4 +1,4 @@
-# SAN Zone Designer v1.1
+# SAN Zone Designer v1.2
 
 Cisco/Brocade SAN Config Generator — Python CLI + Web GUI.
 
@@ -25,6 +25,8 @@ Generuje konfiguracje VSAN, device-alias/alias, zoning oraz zoneset/CFG dla prze
   - [Zakladka Diff](#zakladka-diff)
   - [Sidebar — przegladarka plikow](#sidebar--przegladarka-plikow)
   - [Manage Files — zarzadzanie plikami](#manage-files--zarzadzanie-plikami)
+  - [Zakladka Editor — edycja plikow](#zakladka-editor--edycja-plikow)
+  - [Zmiana hasla](#zmiana-hasla)
   - [Manage Users — zarzadzanie uzytkownikami](#manage-users--zarzadzanie-uzytkownikami)
   - [Zakladka Configuration](#zakladka-configuration)
   - [Zakladka Logs](#zakladka-logs)
@@ -84,6 +86,7 @@ pip install -e ".[web,dev]"
 | `rich` | >= 13 | Kolorowy output w terminalu |
 | `InquirerPy` | >= 0.3 | Interaktywne prompty multi-select |
 | `pyyaml` | >= 6 | Parsowanie plikow YAML |
+| `cryptography` | >= 41.0 | Weryfikacja licencji Ed25519 |
 
 **Zaleznosci web (`[web]`):**
 
@@ -93,6 +96,7 @@ pip install -e ".[web,dev]"
 | `uvicorn[standard]` | >= 0.24 | Serwer ASGI |
 | `python-multipart` | >= 0.0.6 | Obsluga uploadu plikow |
 | `bcrypt` | >= 4.0 | Hashowanie hasel |
+| `pydantic` | >= 2.0 | Modele danych request/response |
 
 ---
 
@@ -335,9 +339,13 @@ san-zone-designer web [OPCJE]
 |-------|-----------|------|
 | `--port` | `8000` | Port serwera |
 | `--host` | `0.0.0.0` | Adres nasluchiwania |
+| `--ssl-cert` | brak | Sciezka do certyfikatu SSL (PEM) |
+| `--ssl-key` | brak | Sciezka do klucza prywatnego SSL (PEM) |
+| `--ssl-key-password` | brak | Haslo do klucza prywatnego SSL |
+| `--ssl-self-signed` | `false` | Generuj samopodpisany certyfikat (dev/test) |
 
 ```bash
-# Domyslne ustawienia
+# Domyslne ustawienia (HTTP)
 san-zone-designer web
 
 # Niestandardowy port
@@ -345,9 +353,15 @@ san-zone-designer web --port 9090
 
 # Dostep tylko lokalny
 san-zone-designer web --host 127.0.0.1 --port 8080
+
+# HTTPS z wlasnym certyfikatem
+san-zone-designer web --ssl-cert cert.pem --ssl-key key.pem
+
+# HTTPS z samopodpisanym certyfikatem (dev)
+san-zone-designer web --ssl-self-signed
 ```
 
-Po uruchomieniu otworz przegladarke: `http://localhost:8000`
+Po uruchomieniu otworz przegladarke: `http://localhost:8000` (lub `https://` przy wlaczonym SSL)
 
 **Domyslne konto administratora:** `admin` / `admin` (tworzone automatycznie przy pierwszym uruchomieniu — zmien haslo!).
 
@@ -449,7 +463,10 @@ Modal dostepny przez przycisk **Manage Files** w naglowku.
 - **Create Project** — pole tekstowe + przycisk. Tworzy nowy katalog projektu. Non-admin automatycznie otrzymuje dostep.
 - **Lista projektow** z plikami (wlacznie z `_output/`):
   - Drag & drop upload plikow (lub klik)
-  - Przycisk usuwania przy kazdym pliku (soft-delete — przenosi do archiwum)
+  - Po najechaniu na plik pojawiaja sie ikony akcji:
+    - **Use** — przypisanie pliku jako iniciatory/targety/existing
+    - **⬇ Download** — pobranie pliku na dysk lokalny
+    - **🗑 Delete** — soft-delete (przeniesienie do archiwum)
   - Przycisk usuwania projektu (tylko admin, soft-delete)
 
 **Panel prawy — podglad pliku:**
@@ -463,6 +480,38 @@ Modal dostepny przez przycisk **Manage Files** w naglowku.
   - Surowa zawartosc pliku
 
 **Dozwolone rozszerzenia uploadu:** `.yaml`, `.yml`, `.txt`, `.cfg`, `.csv`, `.json`
+
+### Zakladka Editor — edycja plikow
+
+Zakladka dostepna dla wszystkich uzytkownikow. Umozliwia bezposrednia edycje plikow iniciatorow i targetow w formacie YAML.
+
+**Pasek plikow:**
+- Wyswietla kontekst aktywnego projektu (ikona folderu + nazwa)
+- Pliki wyswietlane jako kolorowe chipy: zielone (initiators), niebieskie (targets)
+- Aktywny plik podswietlony pierścieniem i cieniem
+- Jesli brakuje pliku danego typu — przycisk `+` do utworzenia nowego pliku
+- Badge informacyjny z typem pliku i liczba wpisow
+- Przycisk **Save** (zolty gdy sa niezapisane zmiany)
+
+**Tabela edycji:**
+- Naglowki kolumn: Alias\*, WWPN\*, Host/Group/Storage Array/Port (w zaleznosci od typu), Fabric, VSAN, Description
+- Walidacja w czasie rzeczywistym — czerwone obramowanie blednych pol
+- Automatyczne formatowanie WWPN (16 znakow hex → format `XX:XX:...`)
+- Przycisk `+` dodaje nowy wiersz, `×` usuwa wiersz
+- Ostrzezenie `beforeunload` przy probie zamkniecia strony z niezapisanymi zmianami
+
+**Integracja z sidebarem:**
+- Przycisk **Edit** przy plikach iniciatorow/targetow otwiera plik bezposrednio w edytorze
+- Na zakladce Editor klik na plik w sidebarze laduje go do edytora
+
+### Zmiana hasla
+
+Kazdy zalogowany uzytkownik moze zmienic swoje haslo przez przycisk **🔒 Password** w naglowku.
+
+- Modal z trzema polami: aktualne haslo, nowe haslo, potwierdzenie
+- Walidacja po stronie klienta: minimalna dlugosc (4 znaki), zgodnosc hasel
+- Walidacja po stronie serwera: weryfikacja aktualnego hasla (bcrypt)
+- Zmiana logowana w audit logu (`auth.password_changed`)
 
 ### Manage Users — zarzadzanie uzytkownikami
 
@@ -633,6 +682,7 @@ Wszystkie endpointy pod `/api/` wymagaja waznej sesji (ciasteczko `session_token
 | `POST` | `/api/auth/login` | Brak | Logowanie. Body: `{username, password}`. Ustawia ciasteczko sesji. Zwraca: `{username, role, projects}`. |
 | `POST` | `/api/auth/logout` | User | Wylogowanie. Usuwa ciasteczko sesji. |
 | `GET` | `/api/auth/me` | User | Dane zalogowanego uzytkownika: `{username, role, projects}`. |
+| `PUT` | `/api/auth/password` | User | Zmiana hasla. Body: `{current_password, new_password}`. Weryfikuje aktualne haslo, waliduje nowe (min. 4 znaki). |
 | `GET` | `/api/auth/users` | Admin | Lista wszystkich uzytkownikow: `[{username, role, projects}]`. |
 | `POST` | `/api/auth/users` | Admin | Tworzenie uzytkownika. Body: `{username, password, role, projects}`. |
 | `PUT` | `/api/auth/users/{username}` | Admin | Aktualizacja projektow uzytkownika. Body: `{projects: [...]}`. Synchronizuje aktywne sesje. |
@@ -645,7 +695,8 @@ Wszystkie endpointy pod `/api/` wymagaja waznej sesji (ciasteczko `session_token
 | `GET` | `/api/files/` | User | Lista projektow i plikow. `?include_output=true` wlacza pliki z `_output/`. Non-admin widzi tylko swoje projekty. |
 | `POST` | `/api/files/project` | User | Tworzenie projektu. Body: `{name}`. Tworca automatycznie otrzymuje dostep. |
 | `POST` | `/api/files/upload?project={name}` | User (dostep) | Upload plikow (multipart). Walidacja rozszerzenia i rozmiaru. |
-| `GET` | `/api/files/{project}/{filename}` | User (dostep) | Podglad pliku: surowa zawartosc + sparsowane wpisy + ostrzezenia walidacji. |
+| `GET` | `/api/files/{project}/{filename}` | User (dostep) | Podglad pliku: surowa zawartosc + sparsowane wpisy + ostrzezenia walidacji + wszystkie pola YAML. |
+| `PUT` | `/api/files/{project}/{filename}` | User (dostep) | Zapis edytowanych wpisow. Body: `{entries: [...], file_type}`. Waliduje wpisy, wykrywa duplikaty, zapisuje YAML. |
 | `DELETE` | `/api/files/{project}/{filename}` | User (dostep) | Soft-delete pliku (przeniesienie do archiwum). |
 | `DELETE` | `/api/files/{project}` | Admin | Soft-delete projektu (archiwizacja calego katalogu). |
 
@@ -1137,6 +1188,19 @@ Kolorowanie jest wylaczane automatycznie gdy:
 
 ## Changelog
 
+### v1.2.0
+- **Zakladka Editor** — bezposrednia edycja plikow iniciatorow i targetow w GUI z walidacja w czasie rzeczywistym, auto-formatowaniem WWPN i ostrzezeniami o niezapisanych zmianach
+- **Zmiana hasla** — kazdy uzytkownik moze zmienic wlasne haslo (przycisk 🔒 Password w naglowku, endpoint `PUT /api/auth/password`)
+- **Pobieranie plikow** — przycisk ⬇ w Manage Files umozliwia pobranie dowolnego pliku na dysk
+- **Ulepszony Manage Files** — ikony akcji (Use / Download / Delete) zamiast tekstowych przyciskow, skalowalny modal (`resize: both`)
+- **Tworzenie plikow z edytora** — przycisk `+` do tworzenia nowych plikow iniciatorow/targetow bezposrednio w zakladce Editor
+- **Endpoint PUT `/api/files/`** — zapis edytowanych wpisow z walidacja przez konstruktory HBA/Target i detekcja duplikatow
+- **Poprawione zaleznosci** — dodano `cryptography>=41.0` (licencja Ed25519) i `pydantic>=2.0` (modele danych)
+- **Responsywny interfejs** — zwijanay sidebar z animacja slide, hamburger menu, header z ikonami na mobilnych, poziomo przewijalna nawigacja zakladek
+- **HTTPS / SSL** — wsparcie dla certyfikatow SSL (`--ssl-cert`, `--ssl-key`, `--ssl-key-password`) oraz samopodpisanych certyfikatow (`--ssl-self-signed`)
+- **Bezpieczne ciasteczka** — `secure=True` i `samesite=strict` przy HTTPS; `samesite=lax` przy HTTP (kompatybilnosc z Safari/Chrome w dev)
+- **Dynamiczna wersja** — endpoint `GET /api/version` zwraca wersje z `__version__`, wyswietlana w naglowku GUI zamiast hardcoded
+
 ### v1.1.0
 - **Interfejs webowy** — FastAPI + Alpine.js SPA z ciemnym motywem
 - **Uwierzytelnianie** — bcrypt, sesje, role admin/user
@@ -1172,4 +1236,10 @@ Narzedzie produkuje output identyczny z oryginalnym skryptem `zonedesigner.sh`. 
 
 ## Licencja
 
-MIT
+Copyright (c) 2026 Konrad Łatkowski All Rights Reserved.
+
+This software and associated documentation files (the "Software") are the proprietary information of Konrad Łatkowski.
+
+You may not use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, without the express written permission of the copyright holder.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

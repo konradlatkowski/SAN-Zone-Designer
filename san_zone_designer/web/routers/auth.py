@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 logger = logging.getLogger(__name__)
 
@@ -19,13 +19,13 @@ from ..auth import (
     verify_password,
 )
 from ..audit import audit_log
-from ..schemas import LoginRequest, UserCreateRequest, UserInfo, UserUpdateRequest
+from ..schemas import LoginRequest, PasswordChangeRequest, UserCreateRequest, UserInfo, UserUpdateRequest
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/login")
-def login(body: LoginRequest, response: Response):
+def login(body: LoginRequest, request: Request, response: Response):
     users = load_users()
     user = next((u for u in users if u["username"] == body.username), None)
     if not user or not verify_password(body.password, user["password_hash"]):
@@ -34,11 +34,13 @@ def login(body: LoginRequest, response: Response):
         raise HTTPException(status_code=401, detail="Invalid username or password")
     projects = user.get("projects", [])
     token = create_session(user["username"], user["role"], projects)
+    is_https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
     response.set_cookie(
         key="session_token",
         value=token,
         httponly=True,
-        samesite="strict",
+        secure=is_https,
+        samesite="strict" if is_https else "lax",
         path="/",
     )
     logger.info("User '%s' logged in (role=%s)", user["username"], user["role"])
@@ -117,3 +119,25 @@ def delete_user(username: str, user: dict = Depends(require_admin)):
     logger.info("Admin '%s' deleted user '%s' (invalidated %d sessions)", user["username"], username, len(to_remove))
     audit_log("user.deleted", user, detail={"target_user": username, "sessions_invalidated": len(to_remove)})
     return {"ok": True}
+
+
+@router.put("/password")
+def change_password(body: PasswordChangeRequest, user: dict = Depends(get_current_user)):
+    """Allow any authenticated user to change their own password."""
+    if len(body.new_password) < 4:
+        raise HTTPException(status_code=400, detail="New password must be at least 4 characters")
+
+    users = load_users()
+    target = next((u for u in users if u["username"] == user["username"]), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not verify_password(body.current_password, target["password_hash"]):
+        audit_log("auth.password_change_failed", user, outcome="failure")
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    target["password_hash"] = hash_password(body.new_password)
+    save_users(users)
+    logger.info("User '%s' changed their password", user["username"])
+    audit_log("auth.password_changed", user)
+    return {"ok": True, "message": "Password changed successfully"}

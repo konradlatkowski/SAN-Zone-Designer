@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "san-zone-designer"
-version = "1.1.0"
+version = "1.2.0"
 description = "SAN Zone Designer - Cisco/Brocade SAN Config Generator"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -17,6 +17,7 @@ dependencies = [
     "rich>=13",
     "InquirerPy>=0.3",
     "pyyaml>=6",
+    "cryptography>=41.0",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +31,7 @@ web = [
     "uvicorn[standard]>=0.24",
     "python-multipart>=0.0.6",
     "bcrypt>=4.0",
+    "pydantic>=2.0",
 ]
 
 [project.scripts]

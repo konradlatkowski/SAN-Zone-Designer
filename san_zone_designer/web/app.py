@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-_AUTH_WHITELIST = {"/api/auth/login"}
+_AUTH_WHITELIST = {"/api/auth/login", "/api/version"}
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -60,6 +60,10 @@ def create_app() -> FastAPI:
     application.include_router(diff.router)
     application.include_router(config.router)
     application.include_router(logs.router)
+
+    @application.get("/api/version")
+    async def get_version():
+        return {"version": __version__}
 
     application.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 

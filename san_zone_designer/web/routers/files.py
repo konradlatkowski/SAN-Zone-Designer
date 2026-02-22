@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import logging
 
+import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 
 logger = logging.getLogger(__name__)
 
 from ...migrator import detect_type_from_filename
+from ...models import HBA, Target
 from ...parser import load_initiators, load_targets
-from ...validator import scan_raw_file_warnings
+from ...validator import check_duplicates, scan_raw_file_warnings
 from ..audit import audit_log
 from ..auth import check_project_access, get_current_user, grant_project_access, require_admin
 from ..dependencies import DATABASE_DIR, DELETED_DIR, resolve_db_path, soft_delete_file, soft_delete_project
@@ -18,6 +20,8 @@ from ..schemas import (
     FileContentResponse,
     FileInfo,
     FileListResponse,
+    FileSaveRequest,
+    FileSaveResponse,
     ProjectCreateRequest,
     ProjectInfo,
 )
@@ -183,14 +187,16 @@ async def preview_file(project: str, filename: str, user: dict = Depends(get_cur
         if file_type == "initiators":
             hbas = load_initiators(file_path)
             entries = [
-                {"alias": h.alias, "wwpn": h.wwpn, "host": h.host, "fabric": h.fabric}
+                {"alias": h.alias, "wwpn": h.wwpn, "host": h.host, "fabric": h.fabric,
+                 "vsan_id": h.vsan_id, "description": h.description}
                 for h in hbas
             ]
             warnings += scan_raw_file_warnings(file_path, "initiators")
         elif file_type == "targets":
             tgts = load_targets(file_path, mode="many")
             entries = [
-                {"alias": t.alias, "wwpn": t.wwpn, "group": t.group, "storage_array": t.storage_array}
+                {"alias": t.alias, "wwpn": t.wwpn, "group": t.group, "storage_array": t.storage_array,
+                 "port": t.port, "fabric": t.fabric, "vsan_id": t.vsan_id, "description": t.description}
                 for t in tgts
             ]
             warnings += scan_raw_file_warnings(file_path, "targets")
@@ -202,6 +208,93 @@ async def preview_file(project: str, filename: str, user: dict = Depends(get_cur
         logger.warning("Validation warnings for '%s/%s': %s", project, filename, warnings)
 
     return FileContentResponse(content=content, entries=entries, file_type=file_type, warnings=warnings)
+
+
+@router.put("/{project}/{filename:path}", response_model=FileSaveResponse)
+async def save_file(project: str, filename: str, req: FileSaveRequest, user: dict = Depends(get_current_user)):
+    """Save edited entries back to a YAML file."""
+    check_project_access(user, project)
+
+    file_path = resolve_db_path(f"{project}/{filename}")
+    if file_path.suffix not in (".yaml", ".yml"):
+        raise HTTPException(status_code=400, detail="Only YAML files can be edited")
+
+    file_type = req.file_type
+    if file_type not in ("initiators", "targets"):
+        raise HTTPException(status_code=400, detail="file_type must be 'initiators' or 'targets'")
+
+    validated: list[dict] = []
+    warnings: list[str] = []
+
+    for entry in req.entries:
+        alias = str(entry.get("alias", "")).strip()
+        wwpn = str(entry.get("wwpn", "")).strip()
+        if not alias or not wwpn:
+            continue  # skip incomplete entries
+
+        try:
+            if file_type == "initiators":
+                obj = HBA(
+                    alias=alias,
+                    wwpn=wwpn,
+                    host=str(entry.get("host", "")).strip(),
+                    fabric=str(entry.get("fabric", "")).strip(),
+                    vsan_id=int(entry.get("vsan_id", 0) or 0),
+                    description=str(entry.get("description", "")).strip(),
+                )
+                d = {"alias": obj.alias, "wwpn": obj.wwpn}
+                if obj.host:
+                    d["host"] = obj.host
+                if obj.fabric:
+                    d["fabric"] = obj.fabric
+                if obj.vsan_id:
+                    d["vsan_id"] = obj.vsan_id
+                if obj.description:
+                    d["description"] = obj.description
+            else:
+                obj = Target(
+                    alias=alias,
+                    wwpn=wwpn,
+                    group=str(entry.get("group", "")).strip(),
+                    storage_array=str(entry.get("storage_array", "")).strip(),
+                    port=str(entry.get("port", "")).strip(),
+                    fabric=str(entry.get("fabric", "")).strip(),
+                    vsan_id=int(entry.get("vsan_id", 0) or 0),
+                    description=str(entry.get("description", "")).strip(),
+                )
+                d = {"alias": obj.alias, "wwpn": obj.wwpn}
+                if obj.group:
+                    d["group"] = obj.group
+                if obj.storage_array:
+                    d["storage_array"] = obj.storage_array
+                if obj.port:
+                    d["port"] = obj.port
+                if obj.fabric:
+                    d["fabric"] = obj.fabric
+                if obj.vsan_id:
+                    d["vsan_id"] = obj.vsan_id
+                if obj.description:
+                    d["description"] = obj.description
+            validated.append(d)
+        except ValueError as exc:
+            warnings.append(f"{alias}: {exc}")
+
+    # Check for duplicates
+    pairs = [(d["alias"], d["wwpn"]) for d in validated]
+    warnings += check_duplicates(pairs)
+
+    # Write YAML
+    yaml_data = {file_type: validated}
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_text(
+        yaml.dump(yaml_data, default_flow_style=False, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    logger.info("User '%s' edited '%s/%s': %d entries", user["username"], project, filename, len(validated))
+    audit_log("file.edited", user, project=project, detail={"filename": filename, "entry_count": len(validated)})
+
+    return FileSaveResponse(saved=True, warnings=warnings, entry_count=len(validated))
 
 
 @router.delete("/{project}/{filename:path}")

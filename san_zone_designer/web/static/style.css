@@ -53,6 +53,37 @@
 .custom-scroll::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
 .custom-scroll::-webkit-scrollbar-thumb:hover { background: #6b7280; }
 
+/* Editor */
+.editor-entry input:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+    border-color: #3b82f6;
+}
+.editor-entry:hover {
+    background-color: rgba(59, 130, 246, 0.04) !important;
+}
+.editor-header span {
+    padding: 0 0.25rem;
+}
+.editor-file-chip {
+    transition: all 0.15s ease;
+}
+.editor-file-chip:hover {
+    transform: translateY(-1px);
+}
+
+/* Resizable modal */
+.modal-resizable {
+    resize: both;
+    overflow: hidden;
+}
+.modal-resizable::-webkit-resizer {
+    background: linear-gradient(135deg, transparent 40%, #4b5563 40%, #4b5563 45%, transparent 45%,
+                transparent 55%, #4b5563 55%, #4b5563 60%, transparent 60%,
+                transparent 70%, #4b5563 70%, #4b5563 75%, transparent 75%);
+    cursor: se-resize;
+}
+
 /* Toast notifications */
 .toast {
     animation: slide-in 0.3s ease-out, fade-out 0.3s ease-in 2.7s;

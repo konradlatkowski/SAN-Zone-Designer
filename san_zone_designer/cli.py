@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -471,8 +472,27 @@ def license(
 def web(
     port: int = typer.Option(8000, help="Port serwera"),
     host: str = typer.Option("0.0.0.0", help="Host"),
+    ssl_certfile: Optional[str] = typer.Option(None, "--ssl-cert", help="Sciezka do certyfikatu SSL (PEM)"),
+    ssl_keyfile: Optional[str] = typer.Option(None, "--ssl-key", help="Sciezka do klucza prywatnego SSL (PEM)"),
+    ssl_keyfile_password: Optional[str] = typer.Option(None, "--ssl-key-password", help="Haslo do klucza prywatnego SSL"),
+    ssl_self_signed: bool = typer.Option(False, "--ssl-self-signed", help="Wygeneruj tymczasowy self-signed certyfikat"),
 ) -> None:
-    """Uruchom interfejs webowy."""
+    """Uruchom interfejs webowy (HTTP lub HTTPS).
+
+    Przyklady:
+
+      # HTTP (domyslnie):
+      san-zone-designer web
+
+      # HTTPS z wlasnym certyfikatem:
+      san-zone-designer web --ssl-cert cert.pem --ssl-key key.pem
+
+      # HTTPS z automatycznym self-signed certyfikatem (dev/test):
+      san-zone-designer web --ssl-self-signed
+
+      # Zmiana portu i hosta:
+      san-zone-designer web --port 8443 --host 127.0.0.1 --ssl-self-signed
+    """
     try:
         import uvicorn
     except ImportError:
@@ -481,8 +501,97 @@ def web(
 
     from .web.app import app as web_app
 
-    console.print(f"[bold green]SAN Zone Designer Web[/bold green] — http://{host}:{port}")
-    uvicorn.run(web_app, host=host, port=port)
+    ssl_kwargs: dict[str, Any] = {}
+
+    if ssl_self_signed:
+        if ssl_certfile or ssl_keyfile:
+            console.print("[red]Error: --ssl-self-signed cannot be used with --ssl-cert / --ssl-key[/red]")
+            raise typer.Exit(1)
+        cert_path, key_path = _generate_self_signed_cert()
+        ssl_kwargs["ssl_certfile"] = cert_path
+        ssl_kwargs["ssl_keyfile"] = key_path
+    elif ssl_certfile or ssl_keyfile:
+        if not ssl_certfile or not ssl_keyfile:
+            console.print("[red]Error: both --ssl-cert and --ssl-key are required for HTTPS[/red]")
+            raise typer.Exit(1)
+        if not Path(ssl_certfile).exists():
+            console.print(f"[red]Error: certificate file not found: {ssl_certfile}[/red]")
+            raise typer.Exit(1)
+        if not Path(ssl_keyfile).exists():
+            console.print(f"[red]Error: key file not found: {ssl_keyfile}[/red]")
+            raise typer.Exit(1)
+        ssl_kwargs["ssl_certfile"] = ssl_certfile
+        ssl_kwargs["ssl_keyfile"] = ssl_keyfile
+        if ssl_keyfile_password:
+            ssl_kwargs["ssl_keyfile_password"] = ssl_keyfile_password
+
+    scheme = "https" if ssl_kwargs else "http"
+    console.print(f"[bold green]SAN Zone Designer Web[/bold green] — {scheme}://{host}:{port}")
+    if ssl_kwargs:
+        console.print(f"[dim]  SSL cert: {ssl_kwargs.get('ssl_certfile')}[/dim]")
+        console.print(f"[dim]  SSL key:  {ssl_kwargs.get('ssl_keyfile')}[/dim]")
+
+    uvicorn.run(web_app, host=host, port=port, **ssl_kwargs)
+
+
+def _generate_self_signed_cert() -> tuple[str, str]:
+    """Generate a temporary self-signed certificate for development use."""
+    import datetime
+    import tempfile
+
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.x509.oid import NameOID
+    except ImportError:
+        console.print("[red]Error: 'cryptography' package required for --ssl-self-signed.[/red]")
+        console.print("[dim]Install with: pip install cryptography[/dim]")
+        raise typer.Exit(1)
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+    subject = issuer = x509.Name([
+        x509.NameAttribute(NameOID.COMMON_NAME, "SAN Zone Designer (self-signed)"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "SAN Zone Designer"),
+    ])
+
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.datetime.now(datetime.timezone.utc))
+        .not_valid_after(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=365))
+        .add_extension(
+            x509.SubjectAlternativeName([
+                x509.DNSName("localhost"),
+                x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
+                x509.IPAddress(ipaddress.ip_address("0.0.0.0")),
+            ]),
+            critical=False,
+        )
+        .sign(key, hashes.SHA256())
+    )
+
+    tmp_dir = tempfile.mkdtemp(prefix="szd_ssl_")
+    cert_path = str(Path(tmp_dir) / "cert.pem")
+    key_path = str(Path(tmp_dir) / "key.pem")
+
+    with open(cert_path, "wb") as f:
+        f.write(cert.public_bytes(serialization.Encoding.PEM))
+    with open(key_path, "wb") as f:
+        f.write(key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        ))
+
+    console.print(f"[yellow]Self-signed certificate generated (valid 365 days)[/yellow]")
+    console.print(f"[yellow]Browsers will show a security warning — this is expected for dev/test.[/yellow]")
+
+    return cert_path, key_path
 
 
 def main() -> None:
